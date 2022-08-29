@@ -1,47 +1,98 @@
-const Pool = require('pg-pool');
+// const Pool = require('pg-pool');
+const mysql = require('mysql2');
 var msg91 = require("msg91-api")("334776AxGI30wecx6082a90bP1");
 const express = require("express");
 const bodyparser = require("body-parser");
 const path = require('path');
+const request_promise = require('request-promise');
 
-// const request = require("request");
-const http = require('http');
-const { response } = require('express');
-
-const pool = new Pool({
-    // host: '172.12.0.1',
+const pool = mysql.createPool({
     host: 'localhost',
-    user: 'postgres',
-    // password: 'root',
-    // port: 4700,
+    user: 'root',
+    password: 'root',
     database: 'internal_dashboard'
 });
 
-pool.connect(() => console.log("Connected to Database"));
+// pool.connect(() => console.log("Connected to Database"));
 
 var app = express();
 
 app.use(bodyparser.json())
 
 
-app.post('/anms/list', async function(req, res){
+app.post('/anms/list', async function(req, res){    
+    var options = {
+        method: 'GET',
+        uri: 'http://monster1.distronix.in:2100/anms/sens/get_device_list_int',
+        json: true
+    }
+    // res.send(body["data"]);
+    request_promise(options).then((parsedBody) => {
+        console.log(parsedBody);
+        res.send(parsedBody);
+        // console.log(parsedBody["data"][0]["id"]);
+        for(let i=0; i<parsedBody["data"].length; i++){
+            var no_entry = false;
+            first_query = "Select * from anms_list where dev_id=\""+parsedBody["data"][i]["dev_id"]+"\"";
+            pool.query(first_query, function(err, rows, fields){
+                console.log(err);
+                console.log(rows);
+                if(rows.length==0){
+                    no_entry = true;
+                }
+            });
+            if(no_entry = true){
+                second_query = "Insert into anms_list (id, dev_id, location, street, zone, createdAt, updatedAt, latitude, longitude, is_enabled_int, district, is_enabled_ext, laeqt) values ("+ parsedBody["data"][i]["id"] + ", '" + parsedBody["data"][i]["dev_id"] + "', '" + parsedBody["data"][i]["location"] + "', '" + parsedBody["data"][i]["street"] + "', '" + parsedBody["data"][i]["zone"] + "', '" + parsedBody["data"][i]["createdAt"] + "', '" + parsedBody["data"][i]["updatedAt"] + "', '" + parsedBody["data"][i]["lat"] + "', '" + parsedBody["data"][i]["long"] + "', " + parsedBody["data"][i]["is_enabled_int"] + ", '" + parsedBody["data"][i]["district"] + "', " + parsedBody["data"][i]["is_enabled_ext"] + ", '" + parsedBody["data"][i]["laeqt"] + "');"
+                pool.query(second_query, (err, rows, fields) => {
+                    console.log("Insertion Complete");   
+                })
+            }
+        }
+    })
+})
+
+app.post('/anms/list/:dev_id', async function(req, res){
+    first_query = "update anms_list set dev_id = '" + req.body.dev_id + "' where location in (select location from anms_list where dev_id='"+req.params.dev_id+"'))";
+    pool.query(first_query, (err, rows, field) => {
+        console.log(err);
+    })
+})
+
+app.post('/aqms/list', async function(req, res){
     var body;
     
-    http.get('http://monster1.distronix.in:2100/anms/sens/get_device_list_int', (resp) => {
-        let data = '';
-        resp.on('data', (chunk) => {
-            data += chunk;
-        })
-
-        // resp.on('end', () =>{
-            // console.log(data);
-        // } )
-
-        console.log("Data is: " + data)
-
-        // res.send(JSON.parse(data));
-    })
+    var options = {
+        method: 'POST',
+        uri: 'http://monster1.distronix.in:1100/v1.0/sens/get_device_list_int',
+        json: true
+    }
     // res.send(body["data"]);
+    request_promise(options).then((parsedBody) => {
+        console.log(parsedBody);
+        res.send(parsedBody);
+        for(let i=0; i<parsedBody["data"].length; i++){
+            first_query = "Insert into aqms_list (id, dev_id, location, stncode, lat, long, district, aqi, last_online) values ("+ parsedBody["data"][i]["id"] + ", '" + parsedBody["data"][i]["dev_id"] + "', '" + parsedBody["data"][i]["location"] + "', '" + parsedBody["data"][i]["stncode"] + "', '" + parsedBody["data"][i]["lat"] + "', '" + parsedBody["data"][i]["long"] + "', '" + parsedBody["data"][i]["district"] + "', " + parsedBody["data"][i]["aqi"] + ", '" + parsedBody["data"][i]["last_online"] + "');";
+            pool.query(first_query, (err, rows, fields) => {
+                console.log(err);
+            });
+        }
+    })
+})
+
+app.post('/aqms/list/:dev_id', async function(req, res){
+    first_query = "update aqms_list set dev_id = '" + req.body.dev_id + "' where location in (select location from aqms_list where dev_id='" + req.params.dev_id+"'))"
+    pool.query(first_query, (err, rows, field) => {
+        console.log("Update Complete");
+    })
+    var location = "";
+    third_query = "select location from aqms_list where dev_id = '" + req.body.dev_id + "');";
+    pool.query(third_query, (err, rows,field) => {
+        location = rows[0];
+    })
+    second_query = "insert into aqms_logs(location, remarks, createdAt) values (" + location + ", 'AQMS Board Change', CURRENT_TIMESTAMP);";
+    pool.query(second_query, (err, rows, field) => {
+        console.log(err);
+    })
 })
 
 
